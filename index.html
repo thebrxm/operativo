@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
 <style>
 /* Consola de operaciones: panel lateral de mando + mapa a pantalla completa */
 :root{
@@ -20,6 +23,7 @@
   --bg:#121518; --panel:#1a1e22; --fg:#e8ebee; --muted:#98a2ac; --line:#2c333a;
   --soft:#222830; --accent:#ef3340; --accent-fg:#fff; --focus:#5aa9ff; color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%;margin:0}
 body{font-family:var(--f-body);font-size:14px;background:var(--bg);color:var(--fg);
   display:grid;grid-template-columns:360px 1fr;overflow:hidden}
@@ -215,13 +219,26 @@ const uid = () => Math.random().toString(36).slice(2,9);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- Mapa ---------- */
-const map = L.map('map', {zoomControl:true, preferCanvas:false}).fitBounds([[BBOX[0],BBOX[1]],[BBOX[2],BBOX[3]]]);
+const HOME = [-34.5725, -58.4170], HOME_Z = 15;
+const map = L.map('map', {zoomControl:true, preferCanvas:false}).setView(HOME, HOME_Z);
+const esri = s => `https://server.arcgisonline.com/ArcGIS/rest/services/${s}/MapServer/tile/{z}/{y}/{x}`;
 const base = {
-  'Calles (OSM)': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}),
-  'Claro (Carto)': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:20,attribution:'© OpenStreetMap © CARTO'}),
-  'Satélite (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'© Esri'}),
+  'Calles (Esri)':     L.tileLayer(esri('World_Street_Map'),{maxZoom:19,attribution:'© Esri, OpenStreetMap'}),
+  'Gris claro (Esri)': L.tileLayer(esri('Canvas/World_Light_Gray_Base'),{maxZoom:16,maxNativeZoom:16,attribution:'© Esri'}),
+  'Satélite (Esri)':   L.tileLayer(esri('World_Imagery'),{maxZoom:19,attribution:'© Esri'}),
+  'Calles (OSM)':      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}),
 };
-base['Claro (Carto)'].addTo(map);
+// Si un mapa base falla (p. ej. OSM bloquea archivos abiertos con doble clic), pasa solo a Esri Calles
+Object.entries(base).forEach(([name,layer])=>{
+  let errs=0;
+  layer.on('tileerror', ()=>{ if(++errs===6 && map.hasLayer(layer) && name!=='Calles (Esri)'){
+    map.removeLayer(layer); base['Calles (Esri)'].addTo(map);
+    setStatus(`El mapa "${name}" no respondió; se cambió a Calles (Esri)`, 'err'); } });
+  layer.on('add', ()=>{ errs=0; });
+});
+base['Calles (Esri)'].addTo(map);
+addEventListener('load', ()=>{ map.invalidateSize(); map.setView(HOME, HOME_Z); });
+addEventListener('resize', ()=>map.invalidateSize());
 const streetRenderer = L.canvas({padding:.3, tolerance:6});
 const layers = {
   hit: L.layerGroup().addTo(map),
