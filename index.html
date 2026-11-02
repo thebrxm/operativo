@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Operativo Palermo — Mapa de despliegue</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/* Consola de operaciones: panel lateral de mando + mapa a pantalla completa */
+:root{
+  --bg:#f3f4f2; --panel:#ffffff; --fg:#1b1f23; --muted:#5d6670; --line:#dde1e4;
+  --soft:#eef1f3; --accent:#c1121f; --accent-fg:#fff; --focus:#0b6bcb;
+  --f-display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#121518; --panel:#1a1e22; --fg:#e8ebee; --muted:#98a2ac; --line:#2c333a;
+  --soft:#222830; --accent:#ef3340; --accent-fg:#fff; --focus:#5aa9ff; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--f-body);font-size:14px;background:var(--bg);color:var(--fg);
+  display:grid;grid-template-columns:360px 1fr;overflow:hidden}
+#panel{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+header{padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+header h1{font-family:var(--f-display);font-size:22px;letter-spacing:.02em;margin:0;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+header h1 i{display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px}
+header p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+#status{font-size:12px;color:var(--muted);margin-top:6px;display:flex;gap:6px;align-items:center}
+#status .dot{width:8px;height:8px;border-radius:50%;background:#e9a23b}
+#status.ok .dot{background:#2a9d4f}#status.err .dot{background:var(--accent)}
+nav.tabs{display:flex;border-bottom:1px solid var(--line)}
+nav.tabs button{flex:1;padding:10px 4px;border:0;background:none;color:var(--muted);font:600 13px var(--f-body);
+  text-transform:uppercase;letter-spacing:.06em;cursor:pointer;border-bottom:3px solid transparent}
+nav.tabs button[aria-selected=true]{color:var(--fg);border-bottom-color:var(--accent)}
+.view{overflow:auto;padding:14px 16px 20px;flex:1;min-height:0;display:flex;flex-direction:column;gap:14px}
+h2{font-family:var(--f-display);font-size:15px;text-transform:uppercase;letter-spacing:.08em;margin:0;color:var(--muted)}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:600;min-width:0}
+input,select,textarea{font:inherit;font-size:14px;color:var(--fg);background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:8px 9px;width:100%}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.row{display:flex;gap:8px;align-items:flex-end}
+.row>*{flex:1;min-width:0}
+.btn{font:600 13px var(--f-body);padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--soft);color:var(--fg);cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.sm{padding:5px 8px;font-size:12px}
+.btn.danger{color:var(--accent)}
+.types{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.types button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 4px 7px;border:1px solid var(--line);
+  border-radius:8px;background:var(--panel);color:var(--fg);cursor:pointer;font:600 11.5px var(--f-body);line-height:1.1;text-align:center}
+.types button[aria-pressed=true]{border-color:var(--fg);box-shadow:inset 0 0 0 1px var(--fg);background:var(--soft)}
+.hint{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0}
+.armed{background:var(--soft);border:1px dashed var(--fg);border-radius:8px;padding:9px 10px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.list{display:flex;flex-direction:column;gap:2px}
+.grp{display:flex;justify-content:space-between;align-items:baseline;margin-top:6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.grp b{font-family:var(--f-display);font-size:14px;text-transform:uppercase;letter-spacing:.05em}
+.grp span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.item{display:flex;gap:8px;align-items:center;padding:6px 4px;border-radius:6px;cursor:pointer}
+.item:hover{background:var(--soft)}
+.item .meta{flex:1;min-width:0}
+.item .meta div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .meta small{color:var(--muted);font-size:12px}
+.swatch{width:22px;height:6px;border-radius:3px;flex:none}
+.chip{font-size:11px;font-weight:600;padding:2px 6px;border-radius:10px;background:var(--soft);color:var(--muted);flex:none}
+.chip.serv{background:#2a9d4f22;color:#2a9d4f}.chip.fuera{background:#c1121f22;color:var(--accent)}
+.totals{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.totals div{background:var(--soft);border-radius:6px;padding:6px 4px;text-align:center}
+.totals b{display:block;font-family:var(--f-display);font-size:20px;font-variant-numeric:tabular-nums}
+.totals small{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap}
+#map{height:100%;min-height:0;background:#dfe3e6}
+#map.placing{cursor:crosshair}
+#map.placing .leaflet-interactive{cursor:crosshair}
+
+/* marcadores */
+.u{display:inline-flex;align-items:stretch;border-radius:5px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.45);border:1.5px solid #fff;
+  font:700 11px/1 var(--f-body);white-space:nowrap;transform:translate(-50%,-50%);position:absolute;left:0;top:0}
+.u b{padding:4px 5px;color:#fff;letter-spacing:.03em}
+.u span{padding:4px 5px;background:#fff;color:#111;font-variant-numeric:tabular-nums}
+.u.st-fuera{opacity:.55;filter:grayscale(.7)}
+.u.st-serv::after{content:"";position:absolute;right:-4px;top:-4px;width:9px;height:9px;border-radius:50%;background:#2a9d4f;border:1.5px solid #fff}
+.u.round{border-radius:50%;width:34px;height:34px;align-items:center;justify-content:center}
+.u.round b{padding:0;font-size:15px}
+.u.square{border-width:2px}
+.lbl{position:absolute;left:0;top:0;transform:translate(-50%,-50%);font:700 13px/1.15 var(--f-body);color:#111;background:rgba(255,255,255,.88);
+  padding:3px 6px;border-radius:4px;border:1px solid #111;white-space:pre;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.lbl.s{font-size:11px}.lbl.l{font-size:18px;font-family:var(--f-display);text-transform:uppercase}
+.lbl.red{color:#b00010;border-color:#b00010}
+.leaflet-div-icon.plain{background:none;border:0}
+.ptype{display:inline-flex;align-items:stretch;border-radius:4px;overflow:hidden;font:700 10px/1 var(--f-body);border:1px solid rgba(0,0,0,.15)}
+.ptype b{padding:3px 4px;color:#fff}
+.pop{font-family:var(--f-body);min-width:220px;display:flex;flex-direction:column;gap:7px}
+.pop h3{margin:0;font-family:var(--f-display);font-size:17px;text-transform:uppercase;letter-spacing:.03em}
+.pop small{color:#666}
+.pop input,.pop select,.pop textarea{background:#f4f5f6;color:#111;border-color:#ccd;font-size:13px;padding:6px 7px}
+.pop .row{gap:6px}
+.pop .btn{background:#f4f5f6;color:#111;border-color:#ccd}
+.pop .btn.primary{background:#c1121f;color:#fff;border-color:#c1121f}
+.pop .btn.danger{color:#c1121f}
+.leaflet-tooltip.st{font:600 12px var(--f-body);padding:2px 6px}
+.legend{background:var(--panel);color:var(--fg);padding:8px 10px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.3);font-size:12px;line-height:1.7}
+.legend i{display:inline-block;width:18px;height:4px;border-radius:2px;margin-right:6px;vertical-align:middle}
+
+@media (max-width:760px){
+  body{grid-template-columns:1fr;grid-template-rows:55% 45%}
+  #map{grid-row:1}
+  #panel{grid-row:2;border-right:0;border-top:1px solid var(--line)}
+  header p{display:none}
+}
+@media print{
+  body{display:block;overflow:visible}
+  #panel{display:none}
+  #map{height:100vh}
+  .leaflet-control-zoom,.leaflet-control-layers{display:none}
+}
+</style>
+</head>
+<body>
+<aside id="panel">
+  <header>
+    <h1><i></i>Operativo Palermo</h1>
+    <p>Zona Av. Olleros — Av. Sarmiento · Planificación de despliegue SAME</p>
+    <div id="status"><span class="dot"></span><span id="statusTxt">Cargando calles de la zona…</span></div>
+  </header>
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="moviles">Móviles</button>
+    <button role="tab" aria-selected="false" data-tab="calles">Calles</button>
+    <button role="tab" aria-selected="false" data-tab="lista">Listado</button>
+  </nav>
+
+  <section class="view" id="v-moviles">
+    <h2>1 · Elegí el recurso</h2>
+    <div class="types" id="typeBtns"></div>
+    <div class="row">
+      <label class="f">Número / ID<input id="fNum" placeholder="ej. 112"></label>
+      <label class="f">Estado
+        <select id="fStatus"><option value="espera">En espera</option><option value="serv">En servicio</option><option value="fuera">Fuera de servicio</option></select>
+      </label>
+    </div>
+    <label class="f">Texto / referencia <input id="fLabel" placeholder="ej. Base Norte, a cargo Dr. Pérez"></label>
+    <h2>2 · Hacé clic en el mapa</h2>
+    <div id="armed" class="armed" hidden></div>
+    <p class="hint">Cada clic coloca un recurso. Si el número es numérico, sube solo (112, 113…). Arrastrá los marcadores para moverlos y tocá uno para editarlo. <b>Esc</b> termina la colocación.</p>
+    <h2>Ir a un cruce</h2>
+    <div class="row">
+      <label class="f">Calle<input id="x1" list="streetNames" placeholder="Av. del Libertador"></label>
+      <label class="f">y<input id="x2" list="streetNames" placeholder="Olleros"></label>
+    </div>
+    <div class="row"><button class="btn" id="goCross">Ir al cruce</button><button class="btn" id="placeCross">Colocar recurso ahí</button></div>
+  </section>
+
+  <section class="view" id="v-calles" hidden>
+    <h2>Buscar y seleccionar calle</h2>
+    <label class="f">Escribí el nombre<input id="streetSearch" list="streetNames" placeholder="ej. Av. Sarmiento"></label>
+    <div class="row">
+      <label class="f">Uso
+        <select id="streetCat"></select>
+      </label>
+    </div>
+    <label class="f">Nota<input id="streetNote" placeholder="ej. corte desde 07:00, desvío por Dorrego"></label>
+    <div class="row"><button class="btn primary" id="addStreet">Marcar calle entera</button></div>
+    <p class="hint">También podés tocar cualquier calle en el mapa: se resalta y elegís si marcar sólo ese tramo o la calle completa dentro de la zona.</p>
+    <h2>Calles marcadas</h2>
+    <div class="list" id="streetList"></div>
+  </section>
+
+  <section class="view" id="v-lista" hidden>
+    <div class="totals" id="totals"></div>
+    <div class="list" id="unitList"></div>
+  </section>
+
+  <div class="foot">
+    <button class="btn sm" id="copySummary">Copiar resumen</button>
+    <button class="btn sm" id="exportJson">Guardar archivo</button>
+    <label class="btn sm" style="cursor:pointer">Abrir archivo<input type="file" id="importJson" accept=".json" hidden></label>
+    <button class="btn sm" id="printMap">Imprimir</button>
+    <button class="btn sm danger" id="clearAll">Borrar todo</button>
+  </div>
+</aside>
+<div id="map"></div>
+<datalist id="streetNames"></datalist>
+
+<script>
+/* ---------- Configuración ---------- */
+const BBOX = [-34.597, -58.448, -34.548, -58.386]; // sur, oeste, norte, este (Olleros → Sarmiento y alrededores)
+const TYPES = {
+  amb:   {name:'Ambulancia', short:'AMB',  color:'#c1121f'},
+  moto:  {name:'Moto',       short:'MOTO', color:'#e76f00'},
+  umat:  {name:'Unidad UMAT',short:'UMAT', color:'#6a3d9a'},
+  aereo: {name:'SAME Aéreo', short:'H',    color:'#0069b4', shape:'round'},
+  mir:   {name:'Móvil MIR',  short:'MIR',  color:'#11806a'},
+  pma:   {name:'Puesto PMA', short:'PMA',  color:'#1d3557', shape:'square'},
+  utie:  {name:'Móvil UTIE', short:'UTIE', color:'#8a5a00'},
+  punto: {name:'Punto / referencia', short:'●', color:'#444'},
+  texto: {name:'Texto en mapa', short:'Aa', color:'#111', isText:true},
+};
+const CATS = {
+  corte:  {name:'Corte total',               color:'#c1121f', dash:'10 6'},
+  acceso: {name:'Acceso de emergencia',      color:'#11a36b'},
+  evac:   {name:'Vía de evacuación',         color:'#0069b4'},
+  espera: {name:'Zona de espera de móviles', color:'#e76f00'},
+  restr:  {name:'Tránsito restringido',      color:'#8e44ad', dash:'4 6'},
+};
+const STATUS = {espera:'En espera', serv:'En servicio', fuera:'Fuera de servicio'};
+const OVERPASS = ['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+const KEY = 'operativo-palermo-v1', CACHE = 'operativo-palermo-osm-v1';
+
+/* ---------- Estado ---------- */
+let state = {units:[], streets:[]};
+try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s && s.units) state = s; }catch(e){}
+const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} renderLists(); };
+const uid = () => Math.random().toString(36).slice(2,9);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- Mapa ---------- */
+const map = L.map('map', {zoomControl:true, preferCanvas:false}).fitBounds([[BBOX[0],BBOX[1]],[BBOX[2],BBOX[3]]]);
+const base = {
+  'Calles (OSM)': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}),
+  'Claro (Carto)': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{maxZoom:20,attribution:'© OpenStreetMap © CARTO'}),
+  'Satélite (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'© Esri'}),
+};
+base['Claro (Carto)'].addTo(map);
+const streetRenderer = L.canvas({padding:.3, tolerance:6});
+const layers = {
+  hit: L.layerGroup().addTo(map),
+  marked: L.layerGroup().addTo(map),
+  units: L.layerGroup().addTo(map),
+  temp: L.layerGroup().addTo(map),
+};
+L.control.layers(base, {'Calles marcadas':layers.marked,'Recursos':layers.units,'Calles tocables':layers.hit}, {collapsed:true}).addTo(map);
+L.control.scale({imperial:false}).addTo(map);
+const legend = L.control({position:'bottomright'});
+legend.onAdd = () => { const d = L.DomUtil.create('div','legend');
+  d.innerHTML = Object.values(CATS).map(c=>`<div><i style="background:${c.color}"></i>${c.name}</div>`).join(''); return d; };
+legend.addTo(map);
+
+/* ---------- Geometría ---------- */
+const M = 111320, COS = Math.cos(-34.575*Math.PI/180);
+const xy = (lat,lng) => [lng*M*COS, lat*110540];
+function distSeg(p, a, b){
+  const [px,py]=xy(...p),[ax,ay]=xy(...a),[bx,by]=xy(...b);
+  const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy; let t = L2 ? ((px-ax)*dx+(py-ay)*dy)/L2 : 0; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(ax+t*dx), py-(ay+t*dy));
+}
+
+/* ---------- Calles OSM ---------- */
+let ways = [];            // {id, n, nodes, g:[[lat,lng]]}
+let byName = new Map();   // nombre -> [ways]
+const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\b(avenida|av\.?|calle|pje\.?|pasaje)\b/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+
+function setStatus(txt, cls){ const s=document.getElementById('status'); s.className=cls||''; document.getElementById('statusTxt').textContent=txt; }
+
+async function loadStreets(){
+  try{ const c = JSON.parse(localStorage.getItem(CACHE)); if(c && c.length){ ingest(c); setStatus(`${byName.size} calles listas (guardadas)`, 'ok'); return; } }catch(e){}
+  const q = `[out:json][timeout:40];way["highway"]["name"](${BBOX.join(',')});out geom;`;
+  for(const url of OVERPASS){
+    try{
+      setStatus('Descargando calles de OpenStreetMap…');
+      const r = await fetch(url, {method:'POST', body:'data='+encodeURIComponent(q), headers:{'Content-Type':'application/x-www-form-urlencoded'}});
+      if(!r.ok) throw new Error(r.status);
+      const j = await r.json();
+      const compact = j.elements.filter(e=>e.geometry).map(e=>({id:e.id, n:e.tags.name, h:e.tags.highway, nodes:e.nodes,
+        g:e.geometry.map(p=>[+p.lat.toFixed(6), +p.lon.toFixed(6)])}));
+      ingest(compact);
+      try{ localStorage.setItem(CACHE, JSON.stringify(compact)); }catch(e){}
+      setStatus(`${byName.size} calles listas para seleccionar`, 'ok');
+      return;
+    }catch(e){ console.warn('Overpass', url, e); }
+  }
+  setStatus('No se pudieron descargar las calles. Revisá la conexión y recargá.', 'err');
+}
+
+const MINOR = new Set(['footway','path','cycleway','steps','track','bridleway','corridor']);
+function ingest(list){
+  ways = list; byName.clear(); layers.hit.clearLayers();
+  for(const w of ways){
+    if(!byName.has(w.n)) byName.set(w.n, []);
+    byName.get(w.n).push(w);
+    const pl = L.polyline(w.g, {renderer:streetRenderer, color:'#0b6bcb', weight:MINOR.has(w.h)?6:10, opacity:0, interactive:true});
+    pl.on('mouseover', ()=>{ pl.setStyle({opacity:.35}); });
+    pl.on('mouseout',  ()=>{ pl.setStyle({opacity:0}); });
+    pl.bindTooltip(w.n, {sticky:true, className:'st', direction:'top', offset:[0,-6]});
+    pl.on('click', ev => { if(placing) return; L.DomEvent.stop(ev); streetPopup(w, ev.latlng); });
+    pl.addTo(layers.hit);
+  }
+  const names = [...byName.keys()].sort((a,b)=>a.localeCompare(b,'es'));
+  document.getElementById('streetNames').innerHTML = names.map(n=>`<option value="${esc(n)}">`).join('');
+  refreshNearest();
+}
+
+function findStreet(q){
+  if(!q) return null;
+  if(byName.has(q)) return q;
+  const nq = norm(q); if(!nq) return null;
+  let best=null, score=-1;
+  for(const n of byName.keys()){
+    const nn = norm(n);
+    let s = nn===nq ? 100 : nn.startsWith(nq) ? 80 : (' '+nn+' ').includes(' '+nq+' ') ? 70 : nn.includes(nq) ? 50 : -1;
+    if(s>score || (s===score && best && n.length<best.length)){ score=s; best=n; }
+  }
+  return score>0 ? best : null;
+}
+
+function nearestStreet(lat,lng){
+  let best=null, d=Infinity;
+  for(const w of ways){
+    if(MINOR.has(w.h)) continue;
+    for(let i=1;i<w.g.length;i++){ const dd = distSeg([lat,lng], w.g[i-1], w.g[i]); if(dd<d){d=dd;best=w;} }
+  }
+  return best && d<70 ? best.n : '';
+}
+
+function crossing(a,b){
+  const A = byName.get(a)||[], B = byName.get(b)||[];
+  const nodes = new Map();
+  for(const w of A) w.nodes?.forEach((id,i)=>nodes.set(id, w.g[i]));
+  const hits=[];
+  for(const w of B) w.nodes?.forEach((id,i)=>{ if(nodes.has(id)) hits.push(w.g[i]); });
+  if(hits.length){ // promedio (avenidas con doble mano)
+    return [hits.reduce((s,p)=>s+p[0],0)/hits.length, hits.reduce((s,p)=>s+p[1],0)/hits.length];
+  }
+  let best=null, d=Infinity; // sin nodo común: puntos más cercanos
+  for(const wa of A) for(const p of wa.g) for(const wb of B) for(const q of wb.g){
+    const [x1,y1]=xy(...p),[x2,y2]=xy(...q), dd=Math.hypot(x1-x2,y1-y2);
+    if(dd<d){d=dd; best=[(p[0]+q[0])/2,(p[1]+q[1])/2];}
+  }
+  return d<60 ? best : null;
+}
+
+/* ---------- Calles marcadas ---------- */
+function catOptions(sel){ return Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${k===sel?'selected':''}>${c.name}</option>`).join(''); }
+document.getElementById('streetCat').innerHTML = catOptions('corte');
+
+function flashStreet(segs){
+  layers.temp.clearLayers();
+  const g = L.featureGroup(segs.map(s=>L.polyline(s,{color:'#ffd400',weight:9,opacity:.9}))).addTo(layers.temp);
+  const g2 = L.featureGroup(segs.map(s=>L.polyline(s,{color:'#111',weight:2,opacity:.9}))).addTo(layers.temp);
+  return g.getBounds();
+}
+
+function streetPopup(w, latlng){
+  flashStreet([w.g]);
+  const html = `<div class="pop"><h3>${esc(w.n)}</h3>
+    <label class="f">Uso<select id="pCat">${catOptions(document.getElementById('streetCat').value)}</select></label>
+    <input id="pNote" placeholder="Nota (opcional)">
+    <div class="row"><button class="btn" data-act="seg" data-way="${w.id}">Sólo este tramo</button><button class="btn primary" data-act="whole" data-name="${esc(w.n)}">Calle entera</button></div>
+    <button class="btn" data-act="here" data-lat="${latlng.lat}" data-lng="${latlng.lng}">Colocar recurso aquí</button></div>`;
+  L.popup({maxWidth:280}).setLatLng(latlng).setContent(html).openOn(map);
+}
+
+function addStreet(name, segs, cat, note){
+  state.streets.push({id:uid(), name, cat, note, segs});
+  layers.temp.clearLayers(); map.closePopup(); save(); drawStreets();
+}
+function drawStreets(){
+  layers.marked.clearLayers();
+  for(const s of state.streets){
+    const c = CATS[s.cat]||CATS.corte;
+    for(const seg of s.segs){
+      L.polyline(seg,{color:'#fff',weight:9,opacity:.9,interactive:false}).addTo(layers.marked);
+      const pl = L.polyline(seg,{color:c.color,weight:6,opacity:.95,dashArray:c.dash||null}).addTo(layers.marked);
+      pl.bindTooltip(`${s.name} · ${c.name}${s.note?' · '+s.note:''}`,{sticky:true,className:'st'});
+      pl.on('click', ev=>{ if(placing) return; L.DomEvent.stop(ev); markedPopup(s, ev.latlng); });
+    }
+  }
+}
+function markedPopup(s, latlng){
+  L.popup({maxWidth:280}).setLatLng(latlng).setContent(`<div class="pop"><h3>${esc(s.name)}</h3>
+    <select data-edit-street="${s.id}" data-field="cat">${catOptions(s.cat)}</select>
+    <input data-edit-street="${s.id}" data-field="note" value="${esc(s.note)}" placeholder="Nota">
+    <div class="row"><button class="btn danger" data-act="delstreet" data-id="${s.id}">Quitar marca</button>
+    <button class="btn" data-act="here" data-lat="${latlng.lat}" data-lng="${latlng.lng}">Recurso aquí</button></div></div>`).openOn(map);
+}
+
+document.getElementById('streetSearch').addEventListener('change', e=>{
+  const n = findStreet(e.target.value); if(!n) return;
+  e.target.value = n; map.fitBounds(flashStreet(byName.get(n).map(w=>w.g)), {padding:[40,40]});
+});
+document.getElementById('addStreet').onclick = ()=>{
+  const inp = document.getElementById('streetSearch'); const n = findStreet(inp.value);
+  if(!n){ inp.focus(); setStatus(ways.length?`No encontré "${inp.value}" en la zona`:'Las calles todavía se están cargando', 'err'); return; }
+  addStreet(n, byName.get(n).map(w=>w.g), document.getElementById('streetCat').value, document.getElementById('streetNote').value.trim());
+  inp.value=''; document.getElementById('streetNote').value='';
+  setStatus(`${n} marcada`, 'ok');
+};
+
+/* ---------- Recursos ---------- */
+let currentType = 'amb', placing = false;
+const tb = document.getElementById('typeBtns');
+tb.innerHTML = Object.entries(TYPES).map(([k,t])=>`<button data-type="${k}" aria-pressed="false">${chip(k)}<span>${t.name}</span></button>`).join('');
+function chip(k){ const t=TYPES[k]; return `<span class="ptype"><b style="background:${t.color}">${t.short}</b></span>`; }
+
+tb.addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  const k = b.dataset.type;
+  if(placing && currentType===k){ stopPlacing(); return; }
+  currentType = k; startPlacing();
+});
+function startPlacing(){
+  placing = true; document.getElementById('map').classList.add('placing');
+  tb.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.type===currentType));
+  const a = document.getElementById('armed'); a.hidden=false;
+  a.innerHTML = `<span>Colocando <b>${TYPES[currentType].name}</b> — clic en el mapa</span><button class="btn sm" id="stopBtn">Listo</button>`;
+  document.getElementById('stopBtn').onclick = stopPlacing;
+  if(TYPES[currentType].isText) document.getElementById('fLabel').focus();
+}
+function stopPlacing(){
+  placing = false; document.getElementById('map').classList.remove('placing');
+  tb.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed','false'));
+  document.getElementById('armed').hidden = true;
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') stopPlacing(); });
+
+map.on('click', e=>{ if(placing) placeUnit(e.latlng.lat, e.latlng.lng); });
+
+function placeUnit(lat,lng){
+  const fNum = document.getElementById('fNum'), fLabel = document.getElementById('fLabel');
+  const t = TYPES[currentType];
+  if(t.isText && !fLabel.value.trim()){ fLabel.focus(); setStatus('Escribí el texto en "Texto / referencia" y volvé a hacer clic', 'err'); return; }
+  const u = {id:uid(), type:currentType, num:fNum.value.trim(), label:fLabel.value.trim(), status:document.getElementById('fStatus').value,
+             note:'', size:'m', lat:+lat.toFixed(6), lng:+lng.toFixed(6)};
+  u.street = nearestStreet(u.lat,u.lng);
+  state.units.push(u); save(); drawUnit(u);
+  if(/^\d+$/.test(u.num)) fNum.value = String(+u.num+1).padStart(u.num.length,'0');
+  if(t.isText) fLabel.value='';
+}
+
+const markers = new Map();
+function unitIcon(u){
+  const t = TYPES[u.type]||TYPES.punto;
+  if(t.isText) return L.divIcon({className:'plain', html:`<div class="lbl ${u.size||'m'} ${u.red?'red':''}">${esc(u.label)}</div>`, iconSize:[0,0]});
+  const shape = t.shape ? ' '+t.shape : '';
+  const inner = t.shape==='round'
+    ? `<b style="background:${t.color}">H</b>`
+    : `<b style="background:${t.color}">${t.short}</b>${u.num?`<span>${esc(u.num)}</span>`:''}`;
+  const extra = t.shape==='round' && u.num ? `<span style="position:absolute;top:34px;left:50%;transform:translateX(-50%);background:#fff;color:#111;font:700 10px var(--f-body);padding:1px 4px;border-radius:3px;box-shadow:0 1px 2px rgba(0,0,0,.4)">${esc(u.num)}</span>`:'';
+  return L.divIcon({className:'plain', html:`<div class="u${shape} st-${u.status}">${inner}</div>${extra}`, iconSize:[0,0]});
+}
+function drawUnit(u){
+  markers.get(u.id)?.remove();
+  const m = L.marker([u.lat,u.lng], {icon:unitIcon(u), draggable:true, riseOnHover:true}).addTo(layers.units);
+  const t = TYPES[u.type];
+  if(!t.isText) m.bindTooltip(`${t.name}${u.num?' '+u.num:''}${u.label?' · '+u.label:''}`, {direction:'top', offset:[0,-14], className:'st'});
+  m.on('dragend', ()=>{ const p=m.getLatLng(); u.lat=+p.lat.toFixed(6); u.lng=+p.lng.toFixed(6); u.street=nearestStreet(u.lat,u.lng); save(); });
+  m.on('click', ev=>{ if(placing){ return; } unitPopup(u); });
+  markers.set(u.id, m);
+}
+function unitPopup(u){
+  const t = TYPES[u.type];
+  const typeOpts = Object.entries(TYPES).filter(([k,x])=>!x.isText===!t.isText).map(([k,x])=>`<option value="${k}" ${k===u.type?'selected':''}>${x.name}</option>`).join('');
+  const body = t.isText
+    ? `<textarea rows="2" data-edit="${u.id}" data-field="label">${esc(u.label)}</textarea>
+       <div class="row"><select data-edit="${u.id}" data-field="size"><option value="s" ${u.size==='s'?'selected':''}>Chico</option><option value="m" ${u.size==='m'?'selected':''}>Mediano</option><option value="l" ${u.size==='l'?'selected':''}>Grande</option></select>
+       <select data-edit="${u.id}" data-field="red"><option value="">Negro</option><option value="1" ${u.red?'selected':''}>Rojo</option></select></div>`
+    : `<div class="row"><select data-edit="${u.id}" data-field="type">${typeOpts}</select><input data-edit="${u.id}" data-field="num" value="${esc(u.num)}" placeholder="Nº"></div>
+       <select data-edit="${u.id}" data-field="status">${Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${k===u.status?'selected':''}>${v}</option>`).join('')}</select>
+       <input data-edit="${u.id}" data-field="label" value="${esc(u.label)}" placeholder="Referencia / a cargo">
+       <textarea rows="2" data-edit="${u.id}" data-field="note" placeholder="Notas">${esc(u.note)}</textarea>`;
+  L.popup({maxWidth:290, offset:[0,-10]}).setLatLng([u.lat,u.lng]).setContent(`<div class="pop">
+    <h3>${t.isText?'Texto':esc(t.name)}${u.num?' '+esc(u.num):''}</h3>
+    <small>${u.street?'Sobre '+esc(u.street)+' · ':''}${u.lat}, ${u.lng}</small>
+    ${body}
+    <div class="row"><button class="btn danger" data-act="delunit" data-id="${u.id}">Eliminar</button><button class="btn" data-act="dupunit" data-id="${u.id}">Duplicar</button></div></div>`).openOn(map);
+}
+
+/* ---------- Delegación de eventos en popups ---------- */
+document.addEventListener('click', e=>{
+  const b = e.target.closest('[data-act]'); if(!b) return;
+  const act = b.dataset.act;
+  if(act==='seg'){ const w = ways.find(x=>x.id==b.dataset.way); addStreet(w.n,[w.g], document.getElementById('pCat').value, document.getElementById('pNote').value.trim()); }
+  if(act==='whole'){ const n=b.dataset.name; addStreet(n, byName.get(n).map(w=>w.g), document.getElementById('pCat').value, document.getElementById('pNote').value.trim()); }
+  if(act==='here'){ map.closePopup(); layers.temp.clearLayers(); placeUnit(+b.dataset.lat, +b.dataset.lng); }
+  if(act==='delstreet'){ state.streets = state.streets.filter(s=>s.id!==b.dataset.id); map.closePopup(); save(); drawStreets(); }
+  if(act==='delunit'){ state.units = state.units.filter(u=>u.id!==b.dataset.id); markers.get(b.dataset.id)?.remove(); markers.delete(b.dataset.id); map.closePopup(); save(); }
+  if(act==='dupunit'){ const u0 = state.units.find(u=>u.id===b.dataset.id); const u={...u0, id:uid(), lat:+(u0.lat+0.0003).toFixed(6), lng:+(u0.lng+0.0003).toFixed(6)};
+    if(/^\d+$/.test(u.num)) u.num=String(+u.num+1); state.units.push(u); drawUnit(u); save(); map.closePopup(); }
+});
+document.addEventListener('change', e=>{
+  const el = e.target;
+  if(el.dataset.edit){ const u = state.units.find(x=>x.id===el.dataset.edit); if(!u) return;
+    u[el.dataset.field] = el.dataset.field==='red' ? !!el.value : el.value; drawUnit(u); save(); }
+  if(el.dataset.editStreet){ const s = state.streets.find(x=>x.id===el.dataset.editStreet); if(!s) return;
+    s[el.dataset.field] = el.value; save(); drawStreets(); }
+});
+
+/* ---------- Cruces ---------- */
+function resolveCross(){
+  const a = findStreet(document.getElementById('x1').value), b = findStreet(document.getElementById('x2').value);
+  if(!a || !b){ setStatus(ways.length?'Revisá los nombres de las dos calles':'Las calles todavía se están cargando','err'); return null; }
+  const p = crossing(a,b);
+  if(!p){ setStatus(`${a} y ${b} no se cruzan dentro de la zona`,'err'); return null; }
+  document.getElementById('x1').value=a; document.getElementById('x2').value=b;
+  layers.temp.clearLayers();
+  L.circleMarker(p,{radius:14,color:'#111',weight:2,fillColor:'#ffd400',fillOpacity:.5}).addTo(layers.temp).bindTooltip(`${a} y ${b}`,{permanent:true,direction:'right',className:'st'});
+  map.setView(p, Math.max(map.getZoom(),17));
+  setStatus(`Cruce ${a} y ${b}`,'ok');
+  return p;
+}
+document.getElementById('goCross').onclick = resolveCross;
+document.getElementById('placeCross').onclick = ()=>{ const p = resolveCross(); if(p) placeUnit(p[0],p[1]); };
+
+/* ---------- Listados ---------- */
+function refreshNearest(){ let ch=false; for(const u of state.units){ if(!u.street && ways.length){ u.street=nearestStreet(u.lat,u.lng); ch=ch||!!u.street; } } if(ch) save(); else renderLists(); }
+function renderLists(){
+  const sl = document.getElementById('streetList');
+  sl.innerHTML = state.streets.length ? state.streets.map(s=>{ const c=CATS[s.cat]||CATS.corte;
+    return `<div class="item" data-street="${s.id}"><span class="swatch" style="background:${c.color}"></span><div class="meta"><div>${esc(s.name)}</div><small>${c.name}${s.segs.length===1?' · tramo':''}${s.note?' · '+esc(s.note):''}</small></div>
+    <button class="btn sm danger" data-act="delstreet" data-id="${s.id}" aria-label="Quitar">✕</button></div>`; }).join('')
+    : '<p class="hint">Todavía no marcaste calles.</p>';
+
+  const counts = k => state.units.filter(u=>u.type===k).length;
+  document.getElementById('totals').innerHTML = [['amb','Amb.'],['moto','Motos'],['mir','MIR'],['utie','UTIE'],['umat','UMAT'],['aereo','Aéreo'],['pma','PMA'],['serv','En serv.']]
+    .map(([k,l])=>`<div><b>${k==='serv'?state.units.filter(u=>u.status==='serv').length:counts(k)}</b><small>${l}</small></div>`).join('');
+
+  const ul = document.getElementById('unitList');
+  const groups = Object.keys(TYPES).map(k=>[k, state.units.filter(u=>u.type===k).sort((a,b)=>String(a.num).localeCompare(String(b.num),'es',{numeric:true}))]).filter(g=>g[1].length);
+  ul.innerHTML = groups.length ? groups.map(([k,arr])=>`<div class="grp"><b>${TYPES[k].name}</b><span>${arr.length}</span></div>`+arr.map(u=>`
+    <div class="item" data-unit="${u.id}">${TYPES[k].isText?'':chip(k)}<div class="meta"><div><b>${esc(TYPES[k].isText?u.label:(u.num||'s/n'))}</b>${!TYPES[k].isText&&u.label?' · '+esc(u.label):''}</div><small>${u.street?esc(u.street):'Sin calle cercana'}</small></div>
+    ${TYPES[k].isText?'':`<span class="chip ${u.status}">${STATUS[u.status]}</span>`}</div>`).join('')).join('')
+    : '<p class="hint">Todavía no hay recursos en el mapa. Elegí un tipo en la pestaña Móviles y hacé clic en el mapa.</p>';
+}
+document.getElementById('unitList').addEventListener('click', e=>{
+  const it = e.target.closest('[data-unit]'); if(!it) return;
+  const u = state.units.find(x=>x.id===it.dataset.unit); map.setView([u.lat,u.lng], Math.max(map.getZoom(),17)); unitPopup(u);
+  if(innerWidth<760) document.getElementById('map').scrollIntoView();
+});
+document.getElementById('streetList').addEventListener('click', e=>{
+  if(e.target.closest('[data-act]')) return;
+  const it = e.target.closest('[data-street]'); if(!it) return;
+  const s = state.streets.find(x=>x.id===it.dataset.street); map.fitBounds(L.featureGroup(s.segs.map(g=>L.polyline(g))).getBounds(),{padding:[40,40]});
+});
+
+/* ---------- Pestañas ---------- */
+document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav.tabs button').forEach(x=>x.setAttribute('aria-selected', x===b));
+  ['moviles','calles','lista'].forEach(v=>document.getElementById('v-'+v).hidden = v!==b.dataset.tab);
+});
+
+/* ---------- Archivo / resumen ---------- */
+function summary(){
+  const lines = ['OPERATIVO PALERMO — Despliegue SAME', new Date().toLocaleString('es-AR'), ''];
+  for(const k of Object.keys(TYPES)){
+    if(TYPES[k].isText) continue;
+    const arr = state.units.filter(u=>u.type===k); if(!arr.length) continue;
+    lines.push(`${TYPES[k].name.toUpperCase()} (${arr.length})`);
+    arr.forEach(u=>lines.push(`  • ${u.num||'s/n'}${u.label?' — '+u.label:''} — ${u.street||'s/calle'} — ${STATUS[u.status]}${u.note?' — '+u.note:''}`));
+    lines.push('');
+  }
+  if(state.streets.length){ lines.push('CALLES'); state.streets.forEach(s=>lines.push(`  • ${s.name}: ${CATS[s.cat].name}${s.segs.length===1?' (tramo)':''}${s.note?' — '+s.note:''}`)); }
+  return lines.join('\n');
+}
+document.getElementById('copySummary').onclick = async ()=>{
+  try{ await navigator.clipboard.writeText(summary()); setStatus('Resumen copiado al portapapeles','ok'); }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=summary(); document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); setStatus('Resumen copiado','ok'); }
+};
+document.getElementById('exportJson').onclick = ()=>{
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(state,null,1)],{type:'application/json'}));
+  a.download = `operativo-palermo-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')}.json`; a.click();
+};
+document.getElementById('importJson').onchange = e=>{
+  const f = e.target.files[0]; if(!f) return;
+  f.text().then(t=>{ const s=JSON.parse(t); if(!s.units) throw 0; state=s; save(); redrawAll(); setStatus('Operativo cargado desde archivo','ok'); })
+   .catch(()=>setStatus('Ese archivo no es un operativo válido','err'));
+  e.target.value='';
+};
+document.getElementById('printMap').onclick = ()=>window.print();
+let armedClear=false;
+document.getElementById('clearAll').onclick = e=>{
+  if(!armedClear){ armedClear=true; e.target.textContent='¿Seguro? Tocá de nuevo'; setTimeout(()=>{armedClear=false;e.target.textContent='Borrar todo';},3000); return; }
+  state={units:[],streets:[]}; save(); redrawAll(); armedClear=false; e.target.textContent='Borrar todo';
+};
+function redrawAll(){ layers.units.clearLayers(); markers.clear(); state.units.forEach(drawUnit); drawStreets(); renderLists(); }
+
+/* ---------- Inicio ---------- */
+redrawAll();
+loadStreets();
+</script>
+</body>
+</html>
